@@ -30,7 +30,7 @@ RIGHT_WHEEL = "RIGHT"
 MIDDLE_WHEEL = "MIDDLE"
 
 # Mapping of chars to integer values used for modular arithmetic of rotors.
-CHAR_SET = {
+WIRE_MAPPING = {
     "A": {
         LEFT_WHEEL: "2",
         MIDDLE_WHEEL: "0",
@@ -213,6 +213,11 @@ CHAR_SET = {
     }
 }
 
+# Populated via init
+CHAR_SET = {
+
+}
+
 #############
 #  CLASSES  #
 #############
@@ -220,28 +225,80 @@ CHAR_SET = {
 
 class Wheel:
     # Class Vars
-    #  - cursor  :  current index of wheel, mapped in CHAR_SET
-    #  - name    :  identifier of wheel - LEFT, RIGHT, or MIDDLE
+    #  - cursor     :  current index of wheel, mapped in WIRE_MAPPING
+    #  - name       :  identifier of wheel - LEFT, RIGHT, or MIDDLE
+    #  - prev_wheel :  Wheel object of the wheel that's to the right of curr wheel.
 
-    def __init__(self, name, starting_value):
+    def __init__(self, name, starting_value, prev_wheel=None):
         print_debug("Init %s wheel at %s" % (name, starting_value))
-        self.cursor = CHAR_SET[starting_value]
+        self.cursor = starting_value
         self.name = name
+        self.prev_wheel = prev_wheel
 
     def iterate(self):
-        # DEPRECATED impl, TODO cleanup
         # Check if we're at the last value and need to go back to 0
-        if self.cursor == CHAR_SET.keys()[-1]:
-            self.cursor = 1
-        else:
-            self.cursor += 1
+        if self.name == RIGHT_WHEEL:
+            if self.cursor == 'Z':
+                print_debug("Rotating %s from %s to %s" % (self.name, self.cursor, "A"))
+                self.cursor = 'A'
+            else:
+                print_debug("Rotating %s from %s to %s" %
+                            (self.name, self.cursor, chr(ord(self.cursor) + 1)))
+                self.cursor = chr(ord(self.cursor) + 1)
+        # TODO iterate middle wheel and left wheel
 
-    def lookup(self, char):
-        # Wheels turn first, then the substitution occurs.
-        # self.iterate()
-        val = CHAR_SET[char][self.name].upper()
+    def encrypt(self, char):
+        if self.name == RIGHT_WHEEL:
+            amount_to_shift = self.char_to_index(self.cursor) - self.char_to_index("A")
+            shifted_char = self.index_to_char((self.char_to_index(char) +
+                                               amount_to_shift) % len(CHAR_SET))
+        elif self.name == MIDDLE_WHEEL:
+            amount_to_shift = self.char_to_index(self.prev_wheel.cursor) - self.char_to_index("A")
+            shifted_char = self.index_to_char((self.char_to_index(char) -
+                                               amount_to_shift) % len(CHAR_SET))
+        elif self.name == LEFT_WHEEL:
+            amount_to_shift = self.char_to_index(self.prev_wheel.cursor) - self.char_to_index("A")
+            shifted_char = self.index_to_char((self.char_to_index(char) +
+                                               amount_to_shift) % len(CHAR_SET))
+        val = WIRE_MAPPING[shifted_char][self.name].upper()
+        print_debug("%s: Shifted %s by %s to %s and encrypted as %s" %
+                    (self.name, char, str(amount_to_shift), shifted_char, val))
         return val
 
+    def decrypt(self, char):
+        decrypted = self.decrypt_char(char)
+        if self.name == RIGHT_WHEEL:
+            amount_to_shift = self.char_to_index(self.cursor) - self.char_to_index("A")
+            shifted_decrypted_char = self.index_to_char((self.char_to_index(decrypted) -
+                                                         amount_to_shift) % len(CHAR_SET))
+        elif self.name == MIDDLE_WHEEL:
+            amount_to_shift = self.char_to_index(self.prev_wheel.cursor) - self.char_to_index("A")
+            shifted_decrypted_char = self.index_to_char((self.char_to_index(decrypted) +
+                                                         amount_to_shift) % len(CHAR_SET))
+        elif self.name == LEFT_WHEEL:
+            amount_to_shift = self.char_to_index(self.prev_wheel.cursor) - self.char_to_index("A")
+            shifted_decrypted_char = self.index_to_char((self.char_to_index(decrypted) -
+                                                         amount_to_shift) % len(CHAR_SET))
+        print_debug("%s: Decrypted %s to %s and shifted by %s to %s" %
+                    (self.name, char, decrypted, str(amount_to_shift), shifted_decrypted_char))
+        return shifted_decrypted_char
+
+    def index_to_char(self, index):
+        return list(CHAR_SET.keys())[list(CHAR_SET.values()).index(index)]
+
+    def char_to_index(self, char):
+        return CHAR_SET[char.upper()]
+
+    def decrypt_char(self, char):
+        """Performs a reverse lookup of a nested dictionary value to get its
+           key. The key in this case is the reverse lookup of the char-to-decrypt
+           using the table defined in WIRE_MAPPING"""
+        for outer in WIRE_MAPPING:
+            for inner in WIRE_MAPPING[outer]:
+                iter_char = WIRE_MAPPING[outer][inner]
+                if inner == self.name and iter_char.upper() == char.upper():
+                    decrypted = outer
+                    return decrypted
 
 #############
 # FUNCTIONS #
@@ -249,6 +306,7 @@ class Wheel:
 
 
 def main(args):
+    populate_char_set()
     permutation, rotor_config = read_config_files()
     wheels = init_wheels(rotor_config)
     if args['decrypt']:
@@ -260,8 +318,11 @@ def main(args):
 def decrypt(ciphertext, permutation, wheels):
     print_debug("Decrypting %s" % ciphertext)
     transposed_plaintext = ""
+    # TODO handle strings longer than 10 chars (break them up into groups of 10)
+    # TODO handle strings shorter than 10 chars (pad them)
     for i in ciphertext:
-        transposed_plaintext += wheels[2].lookup(wheels[1].lookup(wheels[0].lookup(i)))
+        turn_wheels(wheels)
+        transposed_plaintext += wheels[2].decrypt(wheels[1].decrypt(wheels[0].decrypt(i)))
     print_debug("Transposed as %s using %s" % (transposed_plaintext, permutation))
     plaintext = transpose(transposed_plaintext, permutation)
     print("Decrypted %s: %s" % (ciphertext, plaintext))
@@ -270,17 +331,26 @@ def decrypt(ciphertext, permutation, wheels):
 def encrypt(plaintext, permutation, wheels):
     print_debug("Encrypting %s" % plaintext)
     transposed_text = transpose(plaintext, permutation)
+    # TODO handle strings longer than 10 chars (break them up into groups of 10)
+    # TODO handle strings shorter than 10 chars (pad them)
     print_debug("Transposed as %s using %s" % (transposed_text, permutation))
     encrypted_text = ""
     for i in transposed_text:
-        encrypted_text += wheels[0].lookup(wheels[1].lookup(wheels[2].lookup(i)))
+        turn_wheels(wheels)
+        encrypted_text += wheels[0].encrypt(wheels[1].encrypt(wheels[2].encrypt(i)))
     print("Encrypted %s: %s" % (plaintext, encrypted_text))
 
 
 def init_wheels(rotor_config):
-    return [Wheel(LEFT_WHEEL, rotor_config[0]),
-            Wheel(MIDDLE_WHEEL, rotor_config[1]),
-            Wheel(RIGHT_WHEEL, rotor_config[2])]
+    right = Wheel(RIGHT_WHEEL, rotor_config[2])
+    mid = Wheel(MIDDLE_WHEEL, rotor_config[1], right)
+    left = Wheel(LEFT_WHEEL, rotor_config[0], mid)
+    return [left, mid, right]
+
+
+def turn_wheels(wheels):
+    for w in wheels:
+        w.iterate()
 
 
 def transpose(text, permutation):
@@ -298,6 +368,20 @@ def read_config_files():
         rotor_config = file.read()
         file.close()
     return permutation, rotor_config
+
+
+def populate_char_set():
+    """Populates global variable CHAR_SET with the following mapping definition:
+       CHAR_SET = { "A": 1, "B": 2, "C": 3, ... "8": 35, "9": 36 }"""
+    global CHAR_SET
+    # First populate letters A through Z
+    for i in range(1, 27):
+        CHAR_SET[chr(ord('A') + i - 1)] = i
+    size = len(CHAR_SET)
+    # Then populate numbers 0 to 9
+    for i in range(0, 10):
+        CHAR_SET[str(i)] = size + i + 1
+    print_debug("Init CHAR_SET as %s" % str(CHAR_SET))
 
 
 def usage():
