@@ -228,24 +228,40 @@ class Wheel:
     #  - cursor     :  current index of wheel, mapped in WIRE_MAPPING
     #  - name       :  identifier of wheel - LEFT, RIGHT, or MIDDLE
     #  - prev_wheel :  Wheel object of the wheel that's to the right of curr wheel.
+    #  - key_count  :  Number of times a key has been pressed.
 
     def __init__(self, name, starting_value, prev_wheel=None):
         print_debug("Init %s wheel at %s" % (name, starting_value))
         self.cursor = starting_value
         self.name = name
         self.prev_wheel = prev_wheel
+        self.key_count = 0
 
     def iterate(self):
-        # Check if we're at the last value and need to go back to 0
+        self.key_count += 1
+        # Right: Rotates for each key press.
+        # Middle: Rotates for every 7 key presses.
+        # Left: Rotates for every 5 key presses.
         if self.name == RIGHT_WHEEL:
-            if self.cursor == 'Z':
-                print_debug("Rotating %s from %s to %s" % (self.name, self.cursor, "A"))
-                self.cursor = 'A'
-            else:
-                print_debug("Rotating %s from %s to %s" %
-                            (self.name, self.cursor, chr(ord(self.cursor) + 1)))
-                self.cursor = chr(ord(self.cursor) + 1)
-        # TODO iterate middle wheel and left wheel
+            self.do_rotate()
+        elif self.name == MIDDLE_WHEEL and self.key_count % 7 == 0:
+            self.do_rotate()
+        elif self.name == LEFT_WHEEL and self.key_count % 5 == 0:
+            self.do_rotate()
+
+    def do_rotate(self):
+        # Check if we're at the last numeric value and need to go back to alpha A.
+        if self.cursor == '9':
+            print_debug("\tRotating %s from %s to %s" % (self.name, self.cursor, "A"))
+            self.cursor = 'A'
+        # Check if we're at the last alpha value and need to go to numeric 0.
+        elif self.cursor == 'Z':
+            print_debug("\tRotating %s from %s to %s" % (self.name, self.cursor, "0"))
+            self.cursor = '0'
+        else:
+            print_debug("\tRotating %s from %s to %s" %
+                        (self.name, self.cursor, chr(ord(self.cursor) + 1)))
+            self.cursor = chr(ord(self.cursor) + 1)
 
     def encrypt(self, char):
         if self.name == RIGHT_WHEEL:
@@ -258,10 +274,11 @@ class Wheel:
                                                amount_to_shift) % len(CHAR_SET))
         elif self.name == LEFT_WHEEL:
             amount_to_shift = self.char_to_index(self.prev_wheel.cursor) - self.char_to_index("A")
+            print_debug("\t\tGoing to shift by %s" % amount_to_shift)
             shifted_char = self.index_to_char((self.char_to_index(char) +
                                                amount_to_shift) % len(CHAR_SET))
         val = WIRE_MAPPING[shifted_char][self.name].upper()
-        print_debug("%s: Shifted %s by %s to %s and encrypted as %s" %
+        print_debug("\t\t%s: Shifted %s by %s to %s and encrypted as %s" %
                     (self.name, char, str(amount_to_shift), shifted_char, val))
         return val
 
@@ -279,7 +296,7 @@ class Wheel:
             amount_to_shift = self.char_to_index(self.prev_wheel.cursor) - self.char_to_index("A")
             shifted_decrypted_char = self.index_to_char((self.char_to_index(decrypted) -
                                                          amount_to_shift) % len(CHAR_SET))
-        print_debug("%s: Decrypted %s to %s and shifted by %s to %s" %
+        print_debug("\t\t%s: Decrypted %s to %s and shifted by %s to %s" %
                     (self.name, char, decrypted, str(amount_to_shift), shifted_decrypted_char))
         return shifted_decrypted_char
 
@@ -317,28 +334,48 @@ def main(args):
 
 def decrypt(ciphertext, permutation, wheels):
     print_debug("Decrypting %s" % ciphertext)
-    transposed_plaintext = ""
-    # TODO handle strings longer than 10 chars (break them up into groups of 10)
-    # TODO handle strings shorter than 10 chars (pad them)
-    for i in ciphertext:
-        turn_wheels(wheels)
-        transposed_plaintext += wheels[2].decrypt(wheels[1].decrypt(wheels[0].decrypt(i)))
-    print_debug("Transposed as %s using %s" % (transposed_plaintext, permutation))
-    plaintext = transpose(transposed_plaintext, permutation)
+    plaintext = ""
+    if len(ciphertext) % len(permutation) != 0:  # len(permutator) is the size of the permutator's config string.
+        error_quit("Your ciphertext is not divisible by 10! Did you encrypt properly?", 400)
+    # Iterate over string in increments of the size of the permutator config (10).
+    for i in range(0, len(ciphertext), len(permutation)):
+        cur_chars = ciphertext[i:i + len(permutation)]
+        print_debug("Operating on group of ten chars: %s" % cur_chars)
+        transposed_plaintext = ""
+        # Use permutator to transpose text.
+        for t in cur_chars:
+            turn_wheels(wheels)
+            transposed_plaintext += wheels[2].decrypt(wheels[1].decrypt(wheels[0].decrypt(t)))
+        print_debug("Transposed as %s" % (transposed_plaintext))
+        plaintext += transpose(transposed_plaintext, permutation)
+        print_debug("Undid transposition to %s using %s" % (plaintext[i:i+len(permutation)], permutation))
     print("Decrypted %s: %s" % (ciphertext, plaintext))
 
 
 def encrypt(plaintext, permutation, wheels):
-    print_debug("Encrypting %s" % plaintext)
-    transposed_text = transpose(plaintext, permutation)
-    # TODO handle strings longer than 10 chars (break them up into groups of 10)
-    # TODO handle strings shorter than 10 chars (pad them)
-    print_debug("Transposed as %s using %s" % (transposed_text, permutation))
+    print_debug("Encrypting user input %s" % plaintext)
+    num_pad = -len(plaintext) % len(permutation)  # Get the number of "X"es
+                                                  # required to pad the string
+                                                  # it's equal to the size of
+                                                  # the permutator's config.
+    padded_text = plaintext + "X" * num_pad
+    print_debug("Padding %s as %s" % (plaintext, padded_text))
     encrypted_text = ""
-    for i in transposed_text:
-        turn_wheels(wheels)
-        encrypted_text += wheels[0].encrypt(wheels[1].encrypt(wheels[2].encrypt(i)))
-    print("Encrypted %s: %s" % (plaintext, encrypted_text))
+    # Iterate over string in increments of the size of the permutator config (10).
+    for i in range(0, len(padded_text), len(permutation)):
+        cur_chars = padded_text[i:i + len(permutation)]
+        print_debug("Operating on group of ten chars: %s" % cur_chars)
+        # Use permutator to transpose text.
+        transposed_text = transpose(cur_chars, permutation)
+        print_debug("Transposed as %s using %s" % (transposed_text, permutation))
+        # Type each key individually, which rotates the wheels and encrypts them one-by-one.
+        for t in transposed_text:
+            turn_wheels(wheels)
+            encrypted_text += wheels[0].encrypt(wheels[1].encrypt(wheels[2].encrypt(t)))
+    if num_pad == 0:
+        print("Encrypted %s: %s" % (plaintext, encrypted_text))
+    else:
+        print("Encrypted %s (padded as %s): %s" % (plaintext, padded_text, encrypted_text))
 
 
 def init_wheels(rotor_config):
@@ -372,15 +409,15 @@ def read_config_files():
 
 def populate_char_set():
     """Populates global variable CHAR_SET with the following mapping definition:
-       CHAR_SET = { "A": 1, "B": 2, "C": 3, ... "8": 35, "9": 36 }"""
+       CHAR_SET = { "A": 0, "B": 1, "C": 2, ... "8": 35, "9": 36 }"""
     global CHAR_SET
     # First populate letters A through Z
-    for i in range(1, 27):
-        CHAR_SET[chr(ord('A') + i - 1)] = i
+    for i in range(0, 26):
+        CHAR_SET[chr(ord('A') + i)] = i
     size = len(CHAR_SET)
     # Then populate numbers 0 to 9
     for i in range(0, 10):
-        CHAR_SET[str(i)] = size + i + 1
+        CHAR_SET[str(i)] = size + i
     print_debug("Init CHAR_SET as %s" % str(CHAR_SET))
 
 
