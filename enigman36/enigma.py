@@ -347,8 +347,10 @@ def decrypt(ciphertext, permutation, wheels):
             turn_wheels(wheels)
             transposed_plaintext += wheels[2].decrypt(wheels[1].decrypt(wheels[0].decrypt(t)))
         print_debug("Transposed as %s" % (transposed_plaintext))
-        plaintext += transpose(transposed_plaintext, permutation)
-        print_debug("Undid transposition to %s using %s" % (plaintext[i:i+len(permutation)], permutation))
+        plaintext += undo_transpose(transposed_plaintext, permutation)
+        print_debug("Undid transposition of %s to %s using %s" % (transposed_plaintext,
+                                                                  plaintext[i:i+len(permutation)],
+                                                                  permutation))
     print("Decrypted %s: %s" % (ciphertext, plaintext))
 
 
@@ -395,6 +397,14 @@ def transpose(text, permutation):
     for i in permutation:
         transposed_text += text[int(i)]
     return transposed_text
+
+
+def undo_transpose(text, permutation):
+    untransposed_text = ""
+    for i in range(0, len(permutation)):
+        index = permutation.index(str(i))
+        untransposed_text += text[index]
+    return untransposed_text
 
 
 def read_config_files():
