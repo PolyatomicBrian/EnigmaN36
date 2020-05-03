@@ -4,7 +4,10 @@
    Author: Brian Jopling, April 2020
    Usage: enigma.py [-d ENCRYPTED_TEXT][-e TEXT_TO_ENCRYPT]
    Sample: ./enigma.py -e "RUBBERDUCK"
-           ./enigma.py -d "RMFXSRLZMX"
+           ./enigma.py -d "CGN5DPXHLP"
+   Prerequisites:
+     1. File "rotor.config" must exist and contain a 3 character string.
+     2. File "permutator.config" must exist and contain a permutation of digits 0-9.
 """
 
 #############
@@ -22,14 +25,13 @@ import sys
 PERMUTATOR_CONFIG_FILE = "permutator.config"
 ROTOR_CONFIG_FILE = "rotor.config"
 
-parser = argparse.ArgumentParser(description='Encrypt or decrypt using the Enigma Machine!')
+parser = argparse.ArgumentParser(description='Encrypt or decrypt using the EnigmaN36 Machine!')
 IS_DEBUG = True
 
 LEFT_WHEEL = "LEFT"
 RIGHT_WHEEL = "RIGHT"
 MIDDLE_WHEEL = "MIDDLE"
 
-# Mapping of chars to integer values used for modular arithmetic of rotors.
 WIRE_MAPPING = {
     "A": {
         LEFT_WHEEL: "2",
@@ -214,6 +216,8 @@ WIRE_MAPPING = {
 }
 
 # Populated via init
+# Will contain a lookup of character to index, i.e.
+#  {"A" : 1, "B": 2, "C": 3, ... }
 CHAR_SET = {
 
 }
@@ -264,41 +268,52 @@ class Wheel:
             self.cursor = chr(ord(self.cursor) + 1)
 
     def encrypt(self, char):
-        if self.name == RIGHT_WHEEL:
+        if self.prev_wheel is not None:
+            # Offset = Current Rotor Value offset from A - the previous Rotor Value offset from A.
+            amount_to_shift = self.char_to_index(self.cursor) - self.char_to_index("A") - self.char_to_index(self.prev_wheel.cursor) - self.char_to_index("A")
+        else:
+            # No previous wheel, so offset is just current rotor value offset from A.
             amount_to_shift = self.char_to_index(self.cursor) - self.char_to_index("A")
-            shifted_char = self.index_to_char((self.char_to_index(char) +
-                                               amount_to_shift) % len(CHAR_SET))
-        elif self.name == MIDDLE_WHEEL:
-            amount_to_shift = self.char_to_index(self.prev_wheel.cursor) - self.char_to_index("A")
-            shifted_char = self.index_to_char((self.char_to_index(char) -
-                                               amount_to_shift) % len(CHAR_SET))
-        elif self.name == LEFT_WHEEL:
-            amount_to_shift = self.char_to_index(self.prev_wheel.cursor) - self.char_to_index("A")
-            print_debug("\t\tGoing to shift by %s" % amount_to_shift)
-            shifted_char = self.index_to_char((self.char_to_index(char) +
-                                               amount_to_shift) % len(CHAR_SET))
+        # Shift the char by the offset calculated above.
+        shifted_char = self.index_to_char((self.char_to_index(char) + amount_to_shift) % len(CHAR_SET))
         val = WIRE_MAPPING[shifted_char][self.name].upper()
         print_debug("\t\t%s: Shifted %s by %s to %s and encrypted as %s" %
                     (self.name, char, str(amount_to_shift), shifted_char, val))
+        if self.name == LEFT_WHEEL:
+            # Lastly, "normalize" output of the left (final) wheel relative to the default
+            #   charset to account for the rotation of the wheel.
+            # If the wheel was at B (offset of 1), and the value obtained from the left wheel was F, then
+            # F is offset by 1 and this needs to be undone to normalize the value. So F becomes E.
+            amount_to_shift = self.char_to_index(self.cursor) - self.char_to_index("A")
+            val_final = self.index_to_char((self.char_to_index(val) - amount_to_shift) % len(CHAR_SET))
+            print_debug("\t\t%s Final mapping: Shifted %s by %s to %s.\nEncrypted as %s" %
+                        (self.name, val, str(amount_to_shift), val_final, val_final))
+            val = val_final
         return val
 
     def decrypt(self, char):
-        decrypted = self.decrypt_char(char)
-        if self.name == RIGHT_WHEEL:
+        if self.prev_wheel is not None:
+            # Offset = Current Rotor Value offset from A - the previous Rotor Value offset from A.
+            amount_to_shift = self.char_to_index(self.cursor) - self.char_to_index("A") - self.char_to_index(self.prev_wheel.cursor) - self.char_to_index("A")
+        else:
+            # No previous wheel, so offset is just current rotor value offset from A.
             amount_to_shift = self.char_to_index(self.cursor) - self.char_to_index("A")
-            shifted_decrypted_char = self.index_to_char((self.char_to_index(decrypted) -
-                                                         amount_to_shift) % len(CHAR_SET))
-        elif self.name == MIDDLE_WHEEL:
-            amount_to_shift = self.char_to_index(self.prev_wheel.cursor) - self.char_to_index("A")
-            shifted_decrypted_char = self.index_to_char((self.char_to_index(decrypted) +
-                                                         amount_to_shift) % len(CHAR_SET))
-        elif self.name == LEFT_WHEEL:
-            amount_to_shift = self.char_to_index(self.prev_wheel.cursor) - self.char_to_index("A")
-            shifted_decrypted_char = self.index_to_char((self.char_to_index(decrypted) -
-                                                         amount_to_shift) % len(CHAR_SET))
-        print_debug("\t\t%s: Decrypted %s to %s and shifted by %s to %s" %
-                    (self.name, char, decrypted, str(amount_to_shift), shifted_decrypted_char))
-        return shifted_decrypted_char
+        # Shift the char by the offset calculated above.
+        shifted_char = self.index_to_char((self.char_to_index(char) + amount_to_shift) % len(CHAR_SET))
+        decrypted = self.decrypt_char(shifted_char)
+        print_debug("\t\t%s: Shifted %s by %s to %s and decrypted as %s" %
+                    (self.name, char, str(amount_to_shift), shifted_char, decrypted))
+        if self.name == RIGHT_WHEEL:
+            # Lastly, "normalize" output of the right (final) wheel relative to the default
+            #   charset to account for the rotation of the wheel.
+            # If the wheel was at B (offset of 1), and the value obtained from the right wheel was F, then
+            # F is offset by 1 and this needs to be undone to normalize the value. So F becomes E.
+            amount_to_shift = self.char_to_index(self.cursor) - self.char_to_index("A")
+            val_final = self.index_to_char((self.char_to_index(decrypted) - amount_to_shift) % len(CHAR_SET))
+            print_debug("\t\t%s Final mapping: Shifted %s by %s to %s.\nEncrypted as %s" %
+                        (self.name, decrypted, str(amount_to_shift), val_final, val_final))
+            decrypted = val_final
+        return decrypted
 
     def index_to_char(self, index):
         return list(CHAR_SET.keys())[list(CHAR_SET.values()).index(index)]
@@ -325,10 +340,11 @@ class Wheel:
 def main(args):
     populate_char_set()
     permutation, rotor_config = read_config_files()
-    wheels = init_wheels(rotor_config)
     if args['decrypt']:
+        wheels = init_wheels(rotor_config, 'd')
         decrypt(args['decrypt'].upper(), permutation, wheels)
     else:
+        wheels = init_wheels(rotor_config, 'e')
         encrypt(args['encrypt'].upper(), permutation, wheels)
 
 
@@ -336,7 +352,7 @@ def decrypt(ciphertext, permutation, wheels):
     print_debug("Decrypting %s" % ciphertext)
     plaintext = ""
     if len(ciphertext) % len(permutation) != 0:  # len(permutator) is the size of the permutator's config string.
-        error_quit("Your ciphertext is not divisible by 10! Did you encrypt properly?", 400)
+        error_quit("Your ciphertext is not divisible by %d! Did you encrypt properly?" % len(permutation), 400)
     # Iterate over string in increments of the size of the permutator config (10).
     for i in range(0, len(ciphertext), len(permutation)):
         cur_chars = ciphertext[i:i + len(permutation)]
@@ -346,7 +362,7 @@ def decrypt(ciphertext, permutation, wheels):
         for t in cur_chars:
             turn_wheels(wheels)
             transposed_plaintext += wheels[2].decrypt(wheels[1].decrypt(wheels[0].decrypt(t)))
-        print_debug("Transposed as %s" % (transposed_plaintext))
+        print_debug("Transposed as %s" % transposed_plaintext)
         plaintext += undo_transpose(transposed_plaintext, permutation)
         print_debug("Undid transposition of %s to %s using %s" % (transposed_plaintext,
                                                                   plaintext[i:i+len(permutation)],
@@ -380,10 +396,15 @@ def encrypt(plaintext, permutation, wheels):
         print("Encrypted %s (padded as %s): %s" % (plaintext, padded_text, encrypted_text))
 
 
-def init_wheels(rotor_config):
-    right = Wheel(RIGHT_WHEEL, rotor_config[2])
-    mid = Wheel(MIDDLE_WHEEL, rotor_config[1], right)
-    left = Wheel(LEFT_WHEEL, rotor_config[0], mid)
+def init_wheels(rotor_config, mode):
+    if mode == 'e':
+        right = Wheel(RIGHT_WHEEL, rotor_config[2])
+        mid = Wheel(MIDDLE_WHEEL, rotor_config[1], right)
+        left = Wheel(LEFT_WHEEL, rotor_config[0], mid)
+    else:
+        left = Wheel(LEFT_WHEEL, rotor_config[0])
+        mid = Wheel(MIDDLE_WHEEL, rotor_config[1], left)
+        right = Wheel(RIGHT_WHEEL, rotor_config[2], mid)
     return [left, mid, right]
 
 
