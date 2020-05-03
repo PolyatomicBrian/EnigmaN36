@@ -4,8 +4,9 @@ Brian Jopling, April 2020
 
 ### Description:
 
-An implementation of the 1930s Enigma Machine, utilizing both letters and 
-numbers (36 possible characters instead of 26). Written in `python3`.
+An implementation of the 1930s Enigma Machine, with some twists,
+including the utilization of both letters and numbers (36 possible 
+characters instead of 26). Written in `python3`.
 
 Notable differences include:
 
@@ -37,8 +38,16 @@ Notable differences include:
     e.g. `echo "5463720819" > permutator.config`
 
 
-2. Populate `rotor.config` with an initial mapping of wheel rotations and 
-   their corresponding characters.
+2. Populate `rotor.config` with a 3-character string pertaining to the initial 
+   values of the wheels.
+
+   e.g. `echo "BRJ" > rotor.config` corresponds to:
+
+    - Left Wheel starting at "B"
+
+    - Middle Wheel starting at "R"
+
+    - Right Wheel starting at "J"
 
 
 3. Encrypt a message with `engima.py`.
@@ -47,29 +56,8 @@ Notable differences include:
 
 4. Decrypt a message with `enigma.py`.
 
-    e.g. `python3 enigma.py -d "BERGMSGQ3T`
+    e.g. `python3 enigma.py -d "20ULMP7C4Y"`
 
 
-### Encryption flow
-
-1. Inputted text is passed, 10 characters at a time, to the permutator.
-2. The permutator transposes the inputted text based on the 10-digit string 
-provided in `permutator.config`.
-3. The 10-character permutation is passed to the rotors, starting from the 
-right-most wheel and ending at the left-most wheel. Each wheel substitutes 
-each character of the inputted text based on the mapping of `rotor.config`.
-4. The final output is the encrypted string.
-
-
-### Decryption flow
-
-1. Inputted encrypted text is passed to the rotors, starting from the 
-left-most wheel and ending at the right-most wheel. Each wheel substitutes 
-each character of the inputted text based on the mapping of `rotor.config`.
-2. The output of the left-most wheel is passed, 10 characters at a time, to 
-the permutator.
-3. The permutator transposes the inputted text based on the 10-digit string 
-provided in `permutator.config`.
-4. The final output is the decrypted string.
 
 

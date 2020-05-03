@@ -430,10 +430,10 @@ def undo_transpose(text, permutation):
 
 def read_config_files():
     with open(PERMUTATOR_CONFIG_FILE) as file:
-        permutation = file.read()
+        permutation = file.read().strip()
         file.close()
     with open(ROTOR_CONFIG_FILE) as file:
-        rotor_config = file.read()
+        rotor_config = file.read().strip()
         file.close()
     return permutation, rotor_config
 
